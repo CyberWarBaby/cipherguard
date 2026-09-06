@@ -1,0 +1,20 @@
+# ==============================================================================
+# VPS B — SHIPFAST LOGISTICS (INDEPENDENT THIRD-PARTY CARRIER API)
+# This stack runs exclusively on VPS B (e.g., http://SHIPFAST_PUBLIC_IP:8002)
+# It has ZERO knowledge of Kong or CipherGuard.
+# ==============================================================================
+services:
+  shipfast-api:
+    build:
+      context: ../../services/shipfast_api
+      dockerfile: Dockerfile
+    container_name: shipfast-api
+    restart: unless-stopped
+    ports:
+      - "8002:8000"   # External Third-Party Carrier Port
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

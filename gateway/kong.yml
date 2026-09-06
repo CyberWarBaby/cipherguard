@@ -1,0 +1,75 @@
+_format_version: "3.0"
+
+services:
+  # ----------------------------------------------------------------------------
+  # CipherGuard Generic Security Gateway & Management Service
+  # Flow: Client -> Kong (:8000) -> CipherGuard (:8001) -> Configured Upstream API
+  # Kong operates as a 100% vendor-agnostic reverse proxy.
+  # ----------------------------------------------------------------------------
+  - name: cipherguard-service
+    url: http://cipherguard-api:8001
+    routes:
+      - name: cipherguard-v1-route
+        paths:
+          - /api/v1
+        strip_path: false
+      - name: cipherguard-protected-integrations-route
+        paths:
+          - /api/integrations
+        strip_path: false
+      - name: cipherguard-generic-proxy-route
+        paths:
+          - /api/proxy
+        strip_path: false
+      - name: cipherguard-proxy-compat-route
+        paths:
+          - /proxy
+        strip_path: false
+      - name: cipherguard-dashboard-route
+        paths:
+          - /api/cipherguard
+        strip_path: true
+      - name: cipherguard-health-route
+        paths:
+          - /health
+          - /ready
+        strip_path: false
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 300
+          policy: local
+
+# ------------------------------------------------------------------------------
+# Global Gateway Plugins (CORS, Rate Limiting)
+# ------------------------------------------------------------------------------
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "*"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+        - HEAD
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - Authorization
+        - X-Organization-Id
+        - X-API-Key
+      exposed_headers:
+        - X-Process-Time-Ms
+        - X-CipherGuard-Decision
+        - X-CipherGuard-Risk-Score
+        - Content-Type
+      credentials: true
+      max_age: 3600
