@@ -26,6 +26,11 @@ htmlcov/
 data/
 store.json
 
+# Node / Next.js (Adire Market)
+node_modules/
+.next/
+out/
+
 # IDE & OS
 .idea/
 .vscode/

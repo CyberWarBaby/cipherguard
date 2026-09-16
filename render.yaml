@@ -1,0 +1,21 @@
+# Render substitutes for VPS B (ShipFast) and VPS C (PayFlex).
+# In the Render dashboard: New + → Blueprint → this repo.
+# Do not put CipherGuard or Kong on Render for this step.
+services:
+  - type: web
+    name: shipfast-api
+    runtime: python
+    plan: free
+    rootDir: services/shipfast_api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+
+  - type: web
+    name: payflex-api
+    runtime: python
+    plan: free
+    rootDir: services/payflex_api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
