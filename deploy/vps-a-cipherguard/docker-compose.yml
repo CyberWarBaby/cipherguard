@@ -1,0 +1,73 @@
+# ==============================================================================
+# VPS A — CIPHERGUARD GATEWAY & SECURITY ENGINE
+# This stack runs exclusively on VPS A (e.g., http://CIPHERGUARD_PUBLIC_IP:8000)
+# ==============================================================================
+services:
+  # ----------------------------------------------------------------------------
+  # 1. CipherGuard Core Security Engine & Analytics API
+  # ----------------------------------------------------------------------------
+  cipherguard-api:
+    build:
+      context: ../../services/cipherguard_api
+      dockerfile: Dockerfile
+    container_name: cipherguard-api
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - SUPABASE_KEY=${SUPABASE_KEY:-}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - CIPHERGUARD_GATEWAY_URL=${CIPHERGUARD_GATEWAY_URL:-http://localhost:8000}
+      # Real external third-party endpoints on VPS B / VPS C:
+      - SHIPFAST_UPSTREAM_URL=${SHIPFAST_UPSTREAM_URL:-http://127.0.0.1:8002}
+      - PAYFLEX_UPSTREAM_URL=${PAYFLEX_UPSTREAM_URL:-http://127.0.0.1:8006}
+      # In production VPS, enforce strict SSRF validation (blocks 127.0.0.1 and private IPs)
+      - ALLOW_INTERNAL_NETWORKS=${ALLOW_INTERNAL_NETWORKS:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8001/health\")' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - cipherguard-vps-net
+
+  # ----------------------------------------------------------------------------
+  # 2. Kong Public API Gateway
+  # ----------------------------------------------------------------------------
+  kong:
+    image: kong:3.6
+    container_name: cipherguard-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 127.0.0.1:8001
+      KONG_LOG_LEVEL: info
+    volumes:
+      - ../../gateway/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+    ports:
+      - "8000:8000"   # Public Gateway Port for Customer Applications & Dashboard
+    depends_on:
+      cipherguard-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - cipherguard-vps-net
+
+networks:
+  cipherguard-vps-net:
+    driver: bridge
