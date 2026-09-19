@@ -106,14 +106,18 @@ def inspect_threats(
                 )
 
     # 5. Check Sensitive Endpoint Patterns
-    for pat, desc in SENSITIVE_PATH_PATTERNS:
-        if re.search(pat, path, re.IGNORECASE):
-            return ThreatReport(
-                is_threat=True,
-                severity="high",
-                category="sensitive_access",
-                rule_name="Sensitive Keyword Access",
-                description=f"{desc} matching '{path}'"
-            )
+    # Controlled Hackathon Exception: Do not statically block /admin/internal-stats via Threat Shield's Sensitive Keyword Access rule
+    # so that the request can reach the upstream service for behavioral monitoring.
+    if not (path.endswith("/admin/internal-stats") or "/admin/internal-stats" in path):
+        for pat, desc in SENSITIVE_PATH_PATTERNS:
+            if re.search(pat, path, re.IGNORECASE):
+                return ThreatReport(
+                    is_threat=True,
+                    severity="high",
+                    category="sensitive_access",
+                    rule_name="Sensitive Keyword Access",
+                    description=f"{desc} matching '{path}'"
+                )
+
 
     return None

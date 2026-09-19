@@ -136,11 +136,25 @@ def get_customer_address(customer_id: str):
         address_type="shipping"
     )
 
-# Simulated restricted admin endpoint to demonstrate policy violations
+# Simulated restricted admin endpoint to demonstrate policy violations and behavioral telemetry
 @app.get("/admin/internal-stats", dependencies=[Depends(verify_api_key)], tags=["Simulated Restricted"])
 def get_internal_stats():
-    """Restricted administrative endpoint used for testing CipherGuard policy blockers."""
-    return {"message": "Simulated ShipFast admin metrics"}
+    """
+    Restricted administrative endpoint used for testing CipherGuard behavioral monitoring.
+    Returns simulated internal statistics when accessed with a valid API key.
+    """
+    return {
+        "status": "success",
+        "service": "shipfast-api",
+        "message": "Simulated ShipFast admin metrics",
+        "stats": {
+            "total_shipments": 1420,
+            "active_carriers": 12,
+            "system_health": "optimal",
+            "internal_revenue_usd": 84500.00
+        }
+    }
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
