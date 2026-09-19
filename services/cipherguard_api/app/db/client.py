@@ -22,9 +22,6 @@ class MemoryStore:
 
     def reset(self):
         default_org_id = settings.DEFAULT_ORG_ID
-        shipfast_id = "b0000000-0000-0000-0000-000000000001"
-        stripe_id = "b0000000-0000-0000-0000-000000000002"
-        twilio_id = "b0000000-0000-0000-0000-000000000003"
 
         self.organizations: List[Dict[str, Any]] = [
             {
@@ -49,116 +46,9 @@ class MemoryStore:
             }
         ]
 
-        shipfast_upstream = settings.SHIPFAST_UPSTREAM_URL
-        payflex_upstream = settings.PAYFLEX_UPSTREAM_URL
+        self.integrations: List[Dict[str, Any]] = []
+        self.policies: List[Dict[str, Any]] = []
 
-        self.integrations: List[Dict[str, Any]] = [
-            {
-                "id": shipfast_id,
-                "organization_id": default_org_id,
-                "name": "ShipFast Logistics",
-                "slug": "shipfast",
-                "provider": "ShipFast Logistics Ltd",
-                "category": "Shipping",
-                "upstream_url": shipfast_upstream,
-                "base_url": shipfast_upstream,
-                "gateway_url": "/api/integrations/shipfast",
-                "protected_endpoint": "/api/integrations/shipfast",
-                "auth_type": "api_key",
-                "auth_header_name": "X-API-Key",
-                "auth_credential": "sf_test_shipfast_cipherguard_321",
-                "status": "active",
-                "risk_score": 15,
-                "risk_level": "low",
-                "description": "Simulated third-party delivery partner API for package tracking and dispatch.",
-                "metadata": {"carrier": "ShipFast", "env": "sandbox"},
-                "observed_endpoints_count": 2,
-                "last_activity_at": datetime.now(timezone.utc).isoformat(),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            },
-            {
-                "id": stripe_id,
-                "organization_id": default_org_id,
-                "name": "PayFlex Payments",
-                "slug": "payflex",
-                "provider": "PayFlex Gateway Inc",
-                "category": "Payments",
-                "upstream_url": payflex_upstream,
-                "base_url": payflex_upstream,
-                "gateway_url": "/api/integrations/payflex",
-                "protected_endpoint": "/api/integrations/payflex",
-                "auth_type": "api_key",
-                "auth_header_name": "X-API-Key",
-                "auth_credential": "pf_live_sec_demo12345",
-                "status": "active",
-                "risk_score": 12,
-                "risk_level": "low",
-                "description": "Simulated third-party payment gateway integration.",
-                "metadata": {"currency": "NGN", "mode": "sandbox"},
-                "observed_endpoints_count": 3,
-                "last_activity_at": datetime.now(timezone.utc).isoformat(),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            },
-            {
-                "id": twilio_id,
-                "organization_id": default_org_id,
-                "name": "Twilio Communications",
-                "slug": "twilio",
-                "provider": "Twilio Inc",
-                "category": "Messaging",
-                "upstream_url": "https://api.twilio.com",
-                "base_url": "https://api.twilio.com",
-                "gateway_url": "/api/integrations/twilio",
-                "protected_endpoint": "/api/integrations/twilio",
-                "auth_type": "bearer_token",
-                "auth_header_name": "Authorization",
-                "auth_credential": "tw_sec_token_demo",
-                "status": "monitoring",
-                "risk_score": 35,
-                "risk_level": "medium",
-                "description": "SMS & WhatsApp dispatch integration.",
-                "metadata": {"channel": "sms"},
-                "observed_endpoints_count": 3,
-                "last_activity_at": datetime.now(timezone.utc).isoformat(),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-        ]
-
-        self.policies: List[Dict[str, Any]] = [
-            {
-                "id": "p0000000-0000-0000-0000-000000000001",
-                "organization_id": default_org_id,
-                "integration_id": shipfast_id,
-                "name": "ShipFast Strict Read Policy",
-                "description": "Restricts ShipFast integration to read-only queries on orders and customer addresses. Blocks administrative routes.",
-                "allowed_methods": ["GET", "POST"],
-                "allowed_endpoints": ["/orders", "/orders/*", "/customers/*/address"],
-                "blocked_endpoints": ["/admin/*", "/export/*", "/billing/*", "/internal/*"],
-                "rate_limit_rpm": 120,
-                "is_active": True,
-                "action_on_violation": "block",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            },
-            {
-                "id": "p0000000-0000-0000-0000-000000000002",
-                "organization_id": default_org_id,
-                "integration_id": stripe_id,
-                "name": "PayFlex Transaction Safety Policy",
-                "description": "Restricts PayFlex payment integration to authorized checkout and charge endpoints. Blocks internal key vault and administrative routes.",
-                "allowed_methods": ["GET", "POST"],
-                "allowed_endpoints": ["/payments", "/payments/*", "/charge", "/health"],
-                "blocked_endpoints": ["/admin/*", "/vault/*", "/keys/*"],
-                "rate_limit_rpm": 120,
-                "is_active": True,
-                "action_on_violation": "block",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-        ]
 
 
         self.events: List[Dict[str, Any]] = []

@@ -212,9 +212,6 @@ CREATE POLICY "Allow public/service update scans" ON public.scans FOR UPDATE USI
 DO $$
 DECLARE
     default_org_id UUID := 'a0000000-0000-0000-0000-000000000001';
-    shipfast_int_id UUID := 'b0000000-0000-0000-0000-000000000001';
-    payflex_int_id UUID := 'b0000000-0000-0000-0000-000000000002';
-    twilio_int_id UUID := 'b0000000-0000-0000-0000-000000000003';
 BEGIN
     -- 1. Insert Default Organization
     INSERT INTO public.organizations (id, name, slug, plan)
@@ -231,52 +228,6 @@ BEGIN
         'admin'
     ) ON CONFLICT (id) DO NOTHING;
 
-    -- 3. Insert Baseline Integrations (Logistics & Payments)
-    INSERT INTO public.integrations (id, organization_id, name, slug, category, upstream_url, base_url, auth_type, auth_header_name, auth_credential, status, risk_score, risk_level, description, observed_endpoints_count)
-    VALUES 
-        (shipfast_int_id, default_org_id, 'ShipFast Logistics', 'shipfast', 'Shipping', 'http://shipfast-api:8000', 'http://shipfast-api:8000', 'api_key', 'X-API-Key', 'sf_test_shipfast_cipherguard_321', 'active', 15, 'low', 'Simulated third-party delivery partner API for package tracking and dispatch.', 2),
-        (payflex_int_id, default_org_id, 'PayFlex Payments', 'payflex', 'Payments', 'http://payflex-api:8000', 'http://payflex-api:8000', 'api_key', 'X-API-Key', 'pf_live_sec_demo12345', 'active', 12, 'low', 'Simulated third-party payment gateway integration.', 3),
-
-        (twilio_int_id, default_org_id, 'Twilio Communications', 'twilio', 'Messaging', 'https://api.twilio.com', 'https://api.twilio.com', 'bearer_token', 'Authorization', 'tw_token_secret', 'monitoring', 35, 'medium', 'SMS & WhatsApp dispatch integration.', 3)
-    ON CONFLICT (id) DO NOTHING;
-
-    -- 4. Insert Security Policy for ShipFast (Blocks /admin/*)
-    INSERT INTO public.integration_policies (
-        organization_id, integration_id, name, description, 
-        allowed_methods, allowed_endpoints, blocked_endpoints, rate_limit_rpm, is_active, action_on_violation
-    )
-    VALUES (
-        default_org_id,
-        shipfast_int_id,
-        'ShipFast Strict Read Policy',
-        'Restricts ShipFast integration to read-only queries on orders and customer shipping addresses. Blocks administrative and export endpoints.',
-        ARRAY['GET', 'POST'],
-        ARRAY['/orders', '/orders/*', '/customers/*/address'],
-        ARRAY['/admin/*', '/export/*', '/billing/*', '/internal/*'],
-        120,
-        true,
-        'block'
-    )
-    ON CONFLICT DO NOTHING;
-
-    -- 5. Insert Security Policy for PayFlex (Blocks /admin/*, /vault/*)
-    INSERT INTO public.integration_policies (
-        organization_id, integration_id, name, description, 
-        allowed_methods, allowed_endpoints, blocked_endpoints, rate_limit_rpm, is_active, action_on_violation
-    )
-    VALUES (
-        default_org_id,
-        payflex_int_id,
-        'PayFlex Transaction Safety Policy',
-        'Restricts PayFlex payment integration to authorized checkout and charge endpoints. Blocks internal key vault and administrative routes.',
-        ARRAY['GET', 'POST'],
-        ARRAY['/payments', '/payments/*', '/charge', '/health'],
-        ARRAY['/admin/*', '/vault/*', '/keys/*'],
-        120,
-        true,
-        'block'
-    )
-    ON CONFLICT DO NOTHING;
-
 END $$;
+
 

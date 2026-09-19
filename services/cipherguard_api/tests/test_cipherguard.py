@@ -73,6 +73,23 @@ def test_organization_current():
 # 3. Third-Party Integrations CRUD & Multi-Vendor Inventory Tests
 # ------------------------------------------------------------------------------
 def test_list_integrations():
+    client.post("/api/v1/integrations", json={
+        "name": "ShipFast Logistics",
+        "slug": "shipfast",
+        "category": "Shipping",
+        "upstream_url": "http://shipfast-api:8000",
+        "auth_type": "api_key",
+        "auth_credential": "sf_test_key"
+    })
+    client.post("/api/v1/integrations", json={
+        "name": "PayFlex Payments",
+        "slug": "payflex",
+        "category": "Payments",
+        "upstream_url": "http://payflex-api:8000",
+        "auth_type": "api_key",
+        "auth_credential": "pf_test_key"
+    })
+
     response = client.get("/api/v1/integrations")
     assert response.status_code == 200
     data = response.json()
@@ -91,6 +108,7 @@ def test_list_integrations():
     assert "auth_credential" not in payflex_intg  # Never exposed
     assert payflex_intg["has_auth_credential"] is True
     assert payflex_intg["gateway_url"] == "/api/integrations/payflex"
+
 
 def test_create_and_get_integration():
     payload = {
