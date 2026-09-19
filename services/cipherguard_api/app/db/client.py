@@ -207,15 +207,18 @@ def db_list_integrations(org_id: str, sanitize_internal_urls: bool = True) -> Li
     Computes real-time dynamic risk scores and masks internal Docker URLs.
     """
     integrations: List[Dict[str, Any]] = []
+    fetched_from_supabase = False
     client = get_supabase_client()
     if client:
         try:
             res = client.table("integrations").select("*").eq("organization_id", org_id).order("created_at", desc=True).execute()
-            integrations = res.data or []
+            if res.data is not None:
+                integrations = res.data
+                fetched_from_supabase = True
         except Exception as e:
             logger.error(f"Error listing integrations from Supabase: {e}")
 
-    if not integrations:
+    if not fetched_from_supabase:
         integrations = [i for i in memory_store.integrations if i["organization_id"] == org_id]
 
     events = db_list_events(org_id, limit=200)
@@ -302,6 +305,9 @@ def db_create_integration(org_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": now_iso
     }
 
+    # Always keep in-memory fallback store in sync
+    memory_store.integrations.insert(0, record)
+
     client = get_supabase_client()
     if client:
         try:
@@ -311,12 +317,18 @@ def db_create_integration(org_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Supabase create integration error: {e}")
 
-    memory_store.integrations.append(record)
     return record
 
 
 def db_update_integration(org_id: str, integration_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Always keep in-memory fallback store in sync
+    for idx, item in enumerate(memory_store.integrations):
+        if item["organization_id"] == org_id and item["id"] == integration_id:
+            memory_store.integrations[idx].update(data)
+            break
+
     client = get_supabase_client()
     if client:
         try:
@@ -326,13 +338,15 @@ def db_update_integration(org_id: str, integration_id: str, data: Dict[str, Any]
         except Exception as e:
             logger.error(f"Supabase update integration error: {e}")
 
-    for idx, item in enumerate(memory_store.integrations):
+    for item in memory_store.integrations:
         if item["organization_id"] == org_id and item["id"] == integration_id:
-            memory_store.integrations[idx].update(data)
-            return memory_store.integrations[idx]
+            return item
     return None
 
 def db_delete_integration(org_id: str, integration_id: str) -> bool:
+    # Always keep in-memory fallback store in sync
+    memory_store.integrations = [i for i in memory_store.integrations if not (i["organization_id"] == org_id and i["id"] == integration_id)]
+
     client = get_supabase_client()
     if client:
         try:
@@ -342,9 +356,8 @@ def db_delete_integration(org_id: str, integration_id: str) -> bool:
             logger.error(f"Supabase delete integration error: {e}")
             return False
 
-    initial_len = len(memory_store.integrations)
-    memory_store.integrations = [i for i in memory_store.integrations if not (i["organization_id"] == org_id and i["id"] == integration_id)]
-    return len(memory_store.integrations) < initial_len
+    return True
+
 
 # ------------------------------------------------------------------------------
 # Policies
