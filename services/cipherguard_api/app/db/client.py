@@ -13,12 +13,20 @@ from app.core.analyzer import (
 
 logger = logging.getLogger("cipherguard.db")
 
+import json
+import os
+
+STORE_FILE = os.getenv("CIPHERGUARD_STORE_PATH") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "store.json"
+)
+
 # ------------------------------------------------------------------------------
-# In-Memory Store (for local development, testing, and fallback)
+# In-Memory / File-Backed Store (for local development, testing, and fallback)
 # ------------------------------------------------------------------------------
 class MemoryStore:
     def __init__(self):
         self.reset()
+        self.load_from_disk()
 
     def reset(self):
         default_org_id = settings.DEFAULT_ORG_ID
@@ -48,14 +56,71 @@ class MemoryStore:
 
         self.integrations: List[Dict[str, Any]] = []
         self.policies: List[Dict[str, Any]] = []
-
-
-
         self.events: List[Dict[str, Any]] = []
         self.alerts: List[Dict[str, Any]] = []
         self.scans: List[Dict[str, Any]] = []
 
+    def load_from_disk(self):
+        try:
+            if os.path.exists(STORE_FILE):
+                with open(STORE_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        self.integrations = data.get("integrations", self.integrations)
+                        self.policies = data.get("policies", self.policies)
+                        self.events = data.get("events", self.events)
+                        self.alerts = data.get("alerts", self.alerts)
+                        self.scans = data.get("scans", self.scans)
+                        if "organizations" in data:
+                            self.organizations = data["organizations"]
+                        if "user_profiles" in data:
+                            self.user_profiles = data["user_profiles"]
+        except Exception as e:
+            logger.warning(f"Failed to load store from disk: {e}")
+
+    def save_to_disk(self):
+        try:
+            os.makedirs(os.path.dirname(STORE_FILE), exist_ok=True)
+            data = {
+                "organizations": self.organizations,
+                "user_profiles": self.user_profiles,
+                "integrations": self.integrations,
+                "policies": self.policies,
+                "events": self.events,
+                "alerts": self.alerts,
+                "scans": self.scans
+            }
+            tmp_file = f"{STORE_FILE}.tmp"
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_file, STORE_FILE)
+        except Exception as e:
+            logger.warning(f"Failed to save store to disk: {e}")
+
 memory_store = MemoryStore()
+
+VALID_INTEGRATION_COLUMNS = {
+    "id",
+    "organization_id",
+    "name",
+    "slug",
+    "category",
+    "upstream_url",
+    "base_url",
+    "auth_type",
+    "auth_header_name",
+    "auth_credential",
+    "status",
+    "risk_score",
+    "risk_level",
+    "description",
+    "metadata",
+    "observed_endpoints_count",
+    "last_activity_at",
+    "created_at",
+    "updated_at"
+}
+
 
 # ------------------------------------------------------------------------------
 # Supabase Client Factory
@@ -105,6 +170,10 @@ def db_list_integrations(org_id: str, sanitize_internal_urls: bool = True) -> Li
             if res.data is not None:
                 integrations = res.data
                 fetched_from_supabase = True
+                # Keep local memory and disk store synchronized with database
+                other_org_integrations = [i for i in memory_store.integrations if i.get("organization_id") != org_id]
+                memory_store.integrations = [dict(item) for item in res.data] + other_org_integrations
+                memory_store.save_to_disk()
         except Exception as e:
             logger.error(f"Error listing integrations from Supabase: {e}")
 
@@ -195,17 +264,28 @@ def db_create_integration(org_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": now_iso
     }
 
-    # Always keep in-memory fallback store in sync
-    memory_store.integrations.insert(0, record)
+    # Only include valid Supabase table columns in the database insert payload
+    db_payload = {k: v for k, v in record.items() if k in VALID_INTEGRATION_COLUMNS}
 
     client = get_supabase_client()
     if client:
         try:
-            res = client.table("integrations").insert(record).execute()
-            if res.data:
-                return res.data[0]
+            res = client.table("integrations").insert(db_payload).execute()
+            if res.data and len(res.data) > 0:
+                record.update(res.data[0])
+                record["gateway_url"] = f"/api/integrations/{record['slug']}"
+                record["protected_endpoint"] = f"/api/integrations/{record['slug']}"
+                record["provider"] = data.get("provider", f"{record['name']} Provider")
         except Exception as e:
             logger.error(f"Supabase create integration error: {e}")
+
+    # Always keep in-memory fallback store in sync and save to disk
+    memory_store.integrations = [
+        i for i in memory_store.integrations 
+        if not (i.get("organization_id") == org_id and (i.get("id") == record["id"] or i.get("slug") == record["slug"]))
+    ]
+    memory_store.integrations.insert(0, record)
+    memory_store.save_to_disk()
 
     return record
 
@@ -215,32 +295,66 @@ def db_update_integration(org_id: str, integration_id: str, data: Dict[str, Any]
 
     # Always keep in-memory fallback store in sync
     for idx, item in enumerate(memory_store.integrations):
-        if item["organization_id"] == org_id and item["id"] == integration_id:
+        if item["organization_id"] == org_id and (item["id"] == integration_id or item.get("slug") == integration_id):
             memory_store.integrations[idx].update(data)
             break
+    memory_store.save_to_disk()
 
     client = get_supabase_client()
     if client:
         try:
-            res = client.table("integrations").update(data).eq("organization_id", org_id).eq("id", integration_id).execute()
-            if res.data:
-                return res.data[0]
+            db_payload = {k: v for k, v in data.items() if k in VALID_INTEGRATION_COLUMNS}
+            res = client.table("integrations").update(db_payload).eq("organization_id", org_id).or_(f"id.eq.{integration_id},slug.eq.{integration_id}").execute()
+            if res.data and len(res.data) > 0:
+                updated_record = res.data[0]
+                updated_record["gateway_url"] = f"/api/integrations/{updated_record.get('slug')}"
+                updated_record["protected_endpoint"] = f"/api/integrations/{updated_record.get('slug')}"
+                return updated_record
         except Exception as e:
             logger.error(f"Supabase update integration error: {e}")
 
     for item in memory_store.integrations:
-        if item["organization_id"] == org_id and item["id"] == integration_id:
+        if item["organization_id"] == org_id and (item["id"] == integration_id or item.get("slug") == integration_id):
             return item
     return None
 
 def db_delete_integration(org_id: str, integration_id: str) -> bool:
-    # Always keep in-memory fallback store in sync
-    memory_store.integrations = [i for i in memory_store.integrations if not (i["organization_id"] == org_id and i["id"] == integration_id)]
+    # Always keep in-memory fallback store in sync and save to disk
+    memory_store.integrations = [
+        i for i in memory_store.integrations 
+        if not (i["organization_id"] == org_id and (i["id"] == integration_id or i.get("slug") == integration_id))
+    ]
+    memory_store.policies = [
+        p for p in memory_store.policies
+        if not (p.get("organization_id") == org_id and (p.get("integration_id") == integration_id or p.get("integration_slug") == integration_id))
+    ]
+    memory_store.save_to_disk()
 
     client = get_supabase_client()
     if client:
         try:
-            client.table("integrations").delete().eq("organization_id", org_id).eq("id", integration_id).execute()
+            # Resolve actual UUID if slug was supplied
+            target_id = integration_id
+            try:
+                existing = client.table("integrations").select("id").eq("organization_id", org_id).or_(f"id.eq.{integration_id},slug.eq.{integration_id}").execute()
+                if existing.data and len(existing.data) > 0:
+                    target_id = existing.data[0]["id"]
+            except Exception as fe:
+                logger.warning(f"Could not resolve integration ID for deletion: {fe}")
+
+            # Delete related policies and alerts explicitly to prevent foreign key errors
+            try:
+                client.table("integration_policies").delete().eq("organization_id", org_id).eq("integration_id", target_id).execute()
+            except Exception as pe:
+                logger.warning(f"Could not cascade delete policies: {pe}")
+
+            try:
+                client.table("alerts").delete().eq("organization_id", org_id).eq("integration_id", target_id).execute()
+            except Exception as ae:
+                logger.warning(f"Could not cascade delete alerts: {ae}")
+
+            # Delete the integration itself from Supabase
+            client.table("integrations").delete().eq("organization_id", org_id).eq("id", target_id).execute()
             return True
         except Exception as e:
             logger.error(f"Supabase delete integration error: {e}")
